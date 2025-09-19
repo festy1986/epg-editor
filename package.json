@@ -1,0 +1,13 @@
+{
+  "name": "epg-editor",
+  "version": "1.0.0",
+  "description": "Automated editing of epg6.xml.gz for TiviMate",
+  "main": "scripts/edit_epg.js",
+  "scripts": {
+    "edit": "node scripts/edit_epg.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "xml2js": "^0.5.0"
+  }
+}
