@@ -30,8 +30,9 @@ jobs:
         run: ls -l ./public
 
       - name: Debug: Print first 20 programmes
+        shell: bash
         run: |
-          node <<'EOF'
+          node -e "
           const fs = require('fs');
           const zlib = require('zlib');
           const xml2js = require('xml2js');
@@ -50,7 +51,7 @@ jobs:
 
             console.log(JSON.stringify(programmes, null, 2));
           });
-          EOF
+          "
 
       - name: Commit and push updated EPG
         uses: stefanzweifel/git-auto-commit-action@v4
