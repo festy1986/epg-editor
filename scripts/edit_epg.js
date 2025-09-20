@@ -9,16 +9,11 @@ const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
 // Helper functions
 const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
-
 const formatDate = dateStr => {
   const d = new Date(dateStr);
   if (isNaN(d)) return '';
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  const yyyy = d.getFullYear();
-  return `${mm}/${dd}/${yyyy}`;
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}/${d.getFullYear()}`;
 };
-
 const formatYear = dateStr => {
   const d = new Date(dateStr);
   return isNaN(d) ? '' : String(d.getFullYear());
@@ -28,7 +23,7 @@ const formatYear = dateStr => {
 const isSport = title => /\b(NFL|NBA|MLB|NHL)\b/i.test(title);
 
 // Detect if program is a movie (no season/episode info)
-const isMovie = title => !/S\d+E\d+/i.test(title) && !isSport(title);
+const isMovie = title => !/S\d+E\d+/i.test(title);
 
 // Extract season/episode info
 const extractSeasonEpisode = desc => {
@@ -37,6 +32,10 @@ const extractSeasonEpisode = desc => {
   return '';
 };
 
+// Attempt to extract team names for sports
+const extractTeams = title => title.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game)\b/gi, '').trim();
+
+// Auto-corrected EPG
 async function run() {
   try {
     console.log('Downloading original EPG...');
@@ -47,31 +46,32 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
+    // Loop over all programmes
     xml.tv.programme.forEach(p => {
       // Ensure title & desc exist
       if (!p.title) p.title = [{}];
       if (!p.desc) p.desc = [{}];
 
-      const originalTitle = p.title[0]?._ || p.title[0] || '';
-      const cleanedTitle = cleanTitle(originalTitle);
-      const description = p.desc[0]?._ || p.desc[0] || '';
-      const start = p.$?.start || '';
+      let originalTitle = p.title[0]?._ || '';
+      let cleanedTitle = cleanTitle(originalTitle);
+      let description = p.desc[0]?._ || '';
+      const start = p.$?.start;
       const airdate = start ? formatDate(start) : '';
 
       if (isSport(cleanedTitle)) {
-        // Sports metadata: show only teams
-        const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game|Live)\b/gi, '').trim();
+        // Sports metadata: only show teams
+        const teams = extractTeams(cleanedTitle);
         p.title[0]._ = teams || cleanedTitle;
         p.desc[0]._ = `${teams}. ${description}. (${airdate})`;
       } else if (isMovie(cleanedTitle)) {
-        // Movie metadata: title + year
+        // Movies: Title + description + year
         p.title[0]._ = cleanedTitle;
         const year = start ? formatYear(start) : '';
         p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
       } else {
-        // TV show metadata: Episode Name - S1E1. Full description. (MM/DD/YYYY)
+        // TV shows: Title + Episode Name - S1E1 + description + airdate
         const seasonEpisode = extractSeasonEpisode(description);
-        const episodeName = description.split('.')[0] || '';
+        const episodeName = description.split('.')[0] || cleanedTitle; // fallback
         p.title[0]._ = cleanedTitle;
         p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
@@ -81,7 +81,6 @@ async function run() {
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
-    // Ensure public folder exists
     fs.mkdirSync('./public', { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
