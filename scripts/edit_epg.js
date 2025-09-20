@@ -8,8 +8,7 @@ const EPG_URL = 'https://github.com/ferteque/Curated-M3U-Repository/raw/refs/hea
 const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
 // Helper functions
-const cleanTitle = title =>
-  title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').replace(/:/g, '').trim();
+const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
 
 const formatDate = dateStr => {
   const d = new Date(dateStr);
@@ -25,9 +24,11 @@ const formatYear = dateStr => {
   return isNaN(d) ? '' : String(d.getFullYear());
 };
 
-// Detect program type
+// Detect if program is a sport
 const isSport = title => /\b(NFL|NBA|MLB|NHL)\b/i.test(title);
-const isMovie = title => !/S\d+E\d+/i.test(title);
+
+// Detect if program is a movie (no season/episode info)
+const isMovie = title => !/S\d+E\d+/i.test(title) && !isSport(title);
 
 // Extract season/episode info
 const extractSeasonEpisode = desc => {
@@ -36,13 +37,6 @@ const extractSeasonEpisode = desc => {
   return '';
 };
 
-// Extract team names from sports title (if possible)
-const extractTeams = title => {
-  // Remove league keywords, "Live", etc.
-  return title.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game|Live|Match)\b/gi, '').trim();
-};
-
-// Main function
 async function run() {
   try {
     console.log('Downloading original EPG...');
@@ -53,45 +47,34 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
-    // Loop over all programmes
-    xml.tv.programme.forEach((p, index) => {
+    xml.tv.programme.forEach(p => {
       // Ensure title & desc exist
-      if (!p.title) p.title = [''];
-      if (!p.desc) p.desc = [''];
+      if (!p.title) p.title = [{}];
+      if (!p.desc) p.desc = [{}];
 
-      const originalTitle = p.title[0] || '';
-      const originalDesc = p.desc[0] || '';
+      const originalTitle = p.title[0]?._ || p.title[0] || '';
+      const cleanedTitle = cleanTitle(originalTitle);
+      const description = p.desc[0]?._ || p.desc[0] || '';
       const start = p.$?.start || '';
       const airdate = start ? formatDate(start) : '';
-      const year = start ? formatYear(start) : '';
 
-      let cleanedTitle = cleanTitle(originalTitle);
-
-      // Determine program type
       if (isSport(cleanedTitle)) {
-        // Sports formatting
-        let matchup = extractTeams(cleanedTitle);
-        p.title[0] = matchup || cleanedTitle;
-        const descText = originalDesc ? originalDesc.trim() : '';
-        p.desc[0] = `${matchup}. ${descText}${airdate ? ` (${airdate})` : ''}`.replace(/\s+/g,' ').trim();
-
+        // Sports metadata: show only teams
+        const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game|Live)\b/gi, '').trim();
+        p.title[0]._ = teams || cleanedTitle;
+        p.desc[0]._ = `${teams}. ${description}. (${airdate})`;
       } else if (isMovie(cleanedTitle)) {
-        // Movie formatting
-        p.title[0] = cleanedTitle;
-        const descText = originalDesc ? originalDesc.trim() : '';
-        p.desc[0] = `${cleanedTitle}. ${descText}${year ? ` (${year})` : ''}`.replace(/\s+/g,' ').trim();
-
+        // Movie metadata: title + year
+        p.title[0]._ = cleanedTitle;
+        const year = start ? formatYear(start) : '';
+        p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
       } else {
-        // TV show formatting
-        const seasonEpisode = extractSeasonEpisode(originalDesc);
-        const episodeName = originalDesc.split('.')[0] || cleanedTitle;
-        const descText = originalDesc.trim();
-        p.title[0] = cleanedTitle;
-        p.desc[0] = `${episodeName}${seasonEpisode ? ` - ${seasonEpisode}` : ''}. ${descText}${airdate ? ` (${airdate})` : ''}`.replace(/\s+/g,' ').trim();
+        // TV show metadata: Episode Name - S1E1. Full description. (MM/DD/YYYY)
+        const seasonEpisode = extractSeasonEpisode(description);
+        const episodeName = description.split('.')[0] || '';
+        p.title[0]._ = cleanedTitle;
+        p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
-
-      // Log for verification
-      console.log(`${index + 1}: Channel=${p.$.channel} | Title=${p.title[0]} | Desc=${p.desc[0]}`);
     });
 
     // Build XML and compress
@@ -103,7 +86,6 @@ async function run() {
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
     console.log('EPG updated and saved to', OUTPUT_FILE);
-
   } catch (err) {
     console.error('Error updating EPG:', err);
   }
