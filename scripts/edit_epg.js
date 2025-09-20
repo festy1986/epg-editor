@@ -7,7 +7,7 @@ const xml2js = require('xml2js');
 const EPG_URL = 'https://github.com/ferteque/Curated-M3U-Repository/raw/refs/heads/main/epg6.xml.gz';
 const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
-// Full channel whitelist
+// Channels to process
 const CHANNELS = [
   { full: "Comet(COMET).us", clean: "Comet" },
   { full: "Laff(LAFF).us", clean: "Laff" },
@@ -164,7 +164,6 @@ const CHANNELS = [
 
 // Helper functions
 const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
-
 const formatDate = dateStr => {
   const d = new Date(dateStr);
   if (isNaN(d)) return '';
@@ -173,30 +172,23 @@ const formatDate = dateStr => {
   const yyyy = d.getFullYear();
   return `${mm}/${dd}/${yyyy}`;
 };
-
 const formatYear = dateStr => {
   const d = new Date(dateStr);
   return isNaN(d) ? '' : String(d.getFullYear());
 };
-
-// Detect if program is a sport
 const isSport = title => /\b(NFL|NBA|MLB|NHL)\b/i.test(title);
-
-// Detect if program is a movie (no season/episode info)
 const isMovie = title => !/S\d+E\d+/i.test(title);
-
-// Extract season/episode info
 const extractSeasonEpisode = desc => {
   const match = desc.match(/S(\d+)E(\d+)/i);
   if (match) return `S${parseInt(match[1])}E${parseInt(match[2])}`;
   return '';
 };
 
-// Map full channel ID to clean name
-const getCleanChannel = id => {
-  const found = CHANNELS.find(c => c.full.toLowerCase() === id.toLowerCase());
-  return found ? found.clean : null;
-};
+// Map full channel IDs to clean names
+const channelMap = CHANNELS.reduce((acc, ch) => {
+  acc[ch.full] = ch.clean;
+  return acc;
+}, {});
 
 async function run() {
   try {
@@ -208,30 +200,28 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
-    const filteredProgrammes = [];
-
-    // Loop over all programs
+    // Loop over all programmes
     xml.tv.programme.forEach(p => {
-      const cleanChannel = getCleanChannel(p.$.channel);
-      if (!cleanChannel) return; // Skip channels not in whitelist
+      const channelId = p.$.channel;
+      if (!channelMap[channelId]) return; // skip unwanted channels
 
       // Ensure title & desc exist
       if (!p.title) p.title = [{}];
       if (!p.desc) p.desc = [{}];
 
       let originalTitle = p.title[0]?._ || '';
-      let cleanedTitle = cleanTitle(originalTitle);
       let description = p.desc[0]?._ || '';
+      let cleanedTitle = cleanTitle(originalTitle);
       const start = p.$.start;
-      let airdate = start ? formatDate(start) : '';
+      const airdate = start ? formatDate(start) : '';
 
       if (isSport(cleanedTitle)) {
         const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game)\b/gi, '').trim();
         p.title[0]._ = teams;
         p.desc[0]._ = `${teams}. ${description}. (${airdate})`;
       } else if (isMovie(cleanedTitle)) {
-        p.title[0]._ = cleanedTitle;
         const year = start ? formatYear(start) : '';
+        p.title[0]._ = cleanedTitle;
         p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
       } else {
         const seasonEpisode = extractSeasonEpisode(description);
@@ -239,13 +229,8 @@ async function run() {
         p.title[0]._ = cleanedTitle;
         p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
-
-      filteredProgrammes.push(p);
     });
 
-    xml.tv.programme = filteredProgrammes;
-
-    // Build XML and compress
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
