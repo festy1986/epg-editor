@@ -5,7 +5,7 @@ on:
     branches:
       - main
   schedule:
-    - cron: '0 */6 * * *'  # Every 6 hours
+    - cron: '0 */6 * * *'  # every 6 hours
 
 jobs:
   update-epg:
@@ -29,7 +29,7 @@ jobs:
       - name: Verify modified EPG
         run: ls -l ./public
 
-      - name: Debug & validate programmes
+      - name: Debug: Print all programmes
         run: node scripts/debug_epg.js
 
       - name: Commit and push updated EPG
@@ -39,4 +39,3 @@ jobs:
           commit_user_name: github-actions[bot]
           commit_user_email: github-actions[bot]@users.noreply.github.com
           file_pattern: public/epg6_modified.xml.gz
-          push: true
