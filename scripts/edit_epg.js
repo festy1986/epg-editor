@@ -39,6 +39,13 @@ const extractSeasonEpisode = desc => {
   return '';
 };
 
+// Extract sports matchup (e.g., Dallas vs Philadelphia)
+const extractTeams = title => {
+  // Remove league names, "Football", "Basketball", etc.
+  let teams = title.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game|Match)\b/gi, '').trim();
+  return teams || title;
+};
+
 async function run() {
   try {
     console.log('Downloading original EPG...');
@@ -49,52 +56,42 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
-    xml.tv.programme.forEach(p => {
+    console.log(`Total programmes: ${xml.tv.programme.length}`);
+
+    xml.tv.programme.forEach((p, index) => {
       // Ensure title & desc exist
-      if (!p.title) p.title = [{}];
-      if (!p.desc) p.desc = [{}];
+      if (!p.title) p.title = [''];
+      if (!p.desc) p.desc = [''];
 
-      // Grab original title/desc
-      let originalTitle = '';
-      if (p.title[0]) {
-        if (typeof p.title[0] === 'string') originalTitle = p.title[0];
-        else if (p.title[0]._) originalTitle = p.title[0]._;
-      }
-      const cleanedTitle = cleanTitle(originalTitle);
-
-      let description = '';
-      if (p.desc[0]) {
-        if (typeof p.desc[0] === 'string') description = p.desc[0];
-        else if (p.desc[0]._) description = p.desc[0]._;
-      }
-
-      const start = p.start || p.$?.start || '';
+      let originalTitle = p.title[0] || '';
+      let cleanedTitle = cleanTitle(originalTitle);
+      let description = p.desc[0] || '';
+      const start = p.start ? p.start[0] : '';
       const airdate = start ? formatDate(start) : '';
 
       if (isSport(cleanedTitle)) {
-        // Sports: teams only
-        const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game)\b/gi, '').trim();
-        p.title[0]._ = teams || cleanedTitle;
-        p.desc[0]._ = `${teams || cleanedTitle}. ${description}. (${airdate})`;
+        const teams = extractTeams(cleanedTitle);
+        p.title[0] = teams;
+        p.desc[0] = `${teams}. ${description}. (${airdate})`;
       } else if (isMovie(cleanedTitle)) {
-        // Movies
         const year = start ? formatYear(start) : '';
-        p.title[0]._ = cleanedTitle;
-        p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
+        p.title[0] = cleanedTitle;
+        p.desc[0] = `${cleanedTitle}. ${description}. (${year})`;
       } else {
-        // TV shows
         const seasonEpisode = extractSeasonEpisode(description);
         const episodeName = description.split('.')[0] || cleanedTitle;
-        p.title[0]._ = cleanedTitle;
-        p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
+        p.title[0] = cleanedTitle;
+        p.desc[0] = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
+
+      // Log all entries to find your channel
+      console.log(`${index + 1}: Channel=${p.channel[0]} | Title=${p.title[0]} | Desc=${p.desc[0]}`);
     });
 
     // Build XML and compress
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
-    // Save
     fs.mkdirSync('./public', { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
