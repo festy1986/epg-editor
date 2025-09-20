@@ -51,7 +51,7 @@ jobs:
       - name: Ensure public folder exists
         run: mkdir -p public
 
-      # 7️⃣ Commit and push updated EPG using PAT
+      # 7️⃣ Commit and Push Updated EPG only if changed
       - name: Commit and Push Updated EPG
         env:
           PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
@@ -59,10 +59,13 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          if [ -f public/epg6_modified.xml.gz ]; then
-            git add public/epg6_modified.xml.gz
-            git commit -m "Update EPG" || echo "No changes to commit"
+          git add public/epg6_modified.xml.gz
+
+          # Only commit if there are changes
+          if ! git diff --cached --quiet; then
+            git commit -m "Update EPG"
             git push https://x-access-token:${PAT_TOKEN}@github.com/festy1986/epg-editor.git HEAD:main
+            echo "EPG updated and pushed."
           else
-            echo "EPG file not found, nothing to commit"
+            echo "No changes detected. Nothing to commit."
           fi
