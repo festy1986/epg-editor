@@ -3,13 +3,14 @@ const axios = require('axios');
 const zlib = require('zlib');
 const xml2js = require('xml2js');
 
-// Source EPG
+// Source EPG URL
 const EPG_URL = 'https://github.com/ferteque/Curated-M3U-Repository/raw/refs/heads/main/epg6.xml.gz';
 const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
-// Helper functions
+// Helper: remove LIVE, NEW, REPEAT
 const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
 
+// Helper: format date MM/DD/YYYY
 const formatDate = dateStr => {
   const d = new Date(dateStr);
   if (isNaN(d)) return '';
@@ -19,15 +20,16 @@ const formatDate = dateStr => {
   return `${mm}/${dd}/${yyyy}`;
 };
 
+// Helper: get year from date
 const formatYear = dateStr => {
   const d = new Date(dateStr);
   return isNaN(d) ? '' : String(d.getFullYear());
 };
 
-// Detect if program is a sport
+// Detect sports
 const isSport = title => /\b(NFL|NBA|MLB|NHL)\b/i.test(title);
 
-// Detect if program is a movie (no season/episode info)
+// Detect movies (no season/episode)
 const isMovie = title => !/S\d+E\d+/i.test(title);
 
 // Extract season/episode info
@@ -47,6 +49,7 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
+    // Loop over all programmes
     xml.tv.programme.forEach(p => {
       // Ensure title and desc exist
       if (!p.title) p.title = [{}];
@@ -59,17 +62,17 @@ async function run() {
       const airdate = start ? formatDate(start) : '';
 
       if (isSport(cleanedTitle)) {
-        // Sports metadata
+        // Sports: only teams
         const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game)\b/gi, '').trim();
         p.title[0]._ = teams;
         p.desc[0]._ = `${teams}. ${description}. (${airdate})`;
       } else if (isMovie(cleanedTitle)) {
-        // Movie metadata
-        p.title[0]._ = cleanedTitle;
+        // Movies: title + description + year
         const year = start ? formatYear(start) : '';
+        p.title[0]._ = cleanedTitle;
         p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
       } else {
-        // TV show metadata
+        // TV shows: Episode Name - SxEy. Description. (Airdate)
         const seasonEpisode = extractSeasonEpisode(description);
         const episodeName = description.split('.')[0] || '';
         p.title[0]._ = cleanedTitle;
@@ -81,7 +84,7 @@ async function run() {
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
-    // Ensure public folder exists
+    // Ensure public folder exists and save
     fs.mkdirSync('./public', { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
