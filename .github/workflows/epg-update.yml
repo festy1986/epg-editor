@@ -1,71 +1,65 @@
 name: Update EPG
 
 on:
+  push:
+    branches:
+      - main
   schedule:
-    - cron: '0 0 * * *' # daily at midnight UTC
-  workflow_dispatch: # manual trigger
+    - cron: '0 */6 * * *'  # Every 6 hours
 
 jobs:
   update-epg:
     runs-on: ubuntu-latest
 
     steps:
-      # 1️⃣ Checkout repository
+      # Step 1: Checkout repository
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      # 2️⃣ Setup Node.js
+      # Step 2: Setup Node.js
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # 3️⃣ Install dependencies
+      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # 4️⃣ Run the EPG edit script
-      - name: Run EPG Edit Script
+      # Step 4: Run EPG editor script
+      - name: Run EPG editor
         run: npm run edit
 
-      # 5️⃣ Inspect first 5 entries for debugging
-      - name: Inspect first 5 EPG entries
+      # Step 5: Verify modified EPG exists
+      - name: Verify modified EPG
+        run: ls -l ./public
+
+      # Step 6: Optional Debug - Print first 20 programmes in JSON
+      - name: Debug: Print first 20 programmes
         run: |
           node -e "
-            const fs = require('fs');
-            const zlib = require('zlib');
-            const xml2js = require('xml2js');
-
-            const data = fs.readFileSync('./public/epg6_modified.xml.gz');
-            const xmlStr = zlib.gunzipSync(data).toString();
-
-            const parser = new xml2js.Parser({ explicitArray: true, mergeAttrs: true });
-            parser.parseString(xmlStr, (err, result) => {
-              if (err) { console.error(err); return; }
-              const programmes = result.tv.programme.slice(0, 5);
-              console.log(JSON.stringify(programmes, null, 2));
-            });
+          const fs = require('fs');
+          const zlib = require('zlib');
+          const xml2js = require('xml2js');
+          const data = zlib.gunzipSync(fs.readFileSync('./public/epg6_modified.xml.gz'));
+          xml2js.parseString(data, (err, result) => {
+            if (err) throw err;
+            console.log(JSON.stringify(result.tv.programme.slice(0, 20).map(p => ({
+              channel: p.$?.channel,
+              title: p.title?.[0],
+              desc: p.desc?.[0],
+              start: p.$?.start,
+              stop: p.$?.stop
+            })), null, 2));
+          });
           "
 
-      # 6️⃣ Ensure public folder exists
-      - name: Ensure public folder exists
-        run: mkdir -p public
-
-      # 7️⃣ Commit and Push Updated EPG only if changed
-      - name: Commit and Push Updated EPG
-        env:
-          PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          git add public/epg6_modified.xml.gz
-
-          # Only commit if there are changes
-          if ! git diff --cached --quiet; then
-            git commit -m "Update EPG"
-            git push https://x-access-token:${PAT_TOKEN}@github.com/festy1986/epg-editor.git HEAD:main
-            echo "EPG updated and pushed."
-          else
-            echo "No changes detected. Nothing to commit."
-          fi
+      # Step 7: Commit and push updated EPG
+      - name: Commit and push updated EPG
+        uses: stefanzweifel/git-auto-commit-action@v4
+        with:
+          commit_message: "Update EPG automatically"
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          file_pattern: public/epg6_modified.xml.gz
+          push: true
