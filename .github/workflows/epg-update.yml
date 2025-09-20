@@ -29,29 +29,8 @@ jobs:
       - name: Verify modified EPG
         run: ls -l ./public
 
-      - name: Debug: Print first 20 programmes
-        shell: bash
-        run: |
-          node -e "
-          const fs = require('fs');
-          const zlib = require('zlib');
-          const xml2js = require('xml2js');
-
-          const data = zlib.gunzipSync(fs.readFileSync('./public/epg6_modified.xml.gz'));
-          xml2js.parseString(data, (err, result) => {
-            if (err) throw err;
-
-            const programmes = result.tv.programme.slice(0, 20).map(p => ({
-              channel: p.$?.channel,
-              title: p.title?.[0],
-              desc: p.desc?.[0],
-              start: p.$?.start,
-              stop: p.$?.stop
-            }));
-
-            console.log(JSON.stringify(programmes, null, 2));
-          });
-          "
+      - name: Debug: Print all programmes
+        run: node scripts/debug_epg.js
 
       - name: Commit and push updated EPG
         uses: stefanzweifel/git-auto-commit-action@v4
