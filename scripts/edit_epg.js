@@ -9,6 +9,7 @@ const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
 // Helper functions
 const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
+
 const formatDate = dateStr => {
   const d = new Date(dateStr);
   if (isNaN(d)) return '';
@@ -17,6 +18,7 @@ const formatDate = dateStr => {
   const yyyy = d.getFullYear();
   return `${mm}/${dd}/${yyyy}`;
 };
+
 const formatYear = dateStr => {
   const d = new Date(dateStr);
   return isNaN(d) ? '' : String(d.getFullYear());
@@ -45,15 +47,16 @@ async function run() {
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
-    // Loop over all programs
     xml.tv.programme.forEach(p => {
-      let originalTitle = p.title[0]?._ || '';
-      let cleanedTitle = cleanTitle(originalTitle);
-      let description = p.desc && p.desc[0]?._ ? p.desc[0]._ : '';
+      // Ensure title and desc exist
+      if (!p.title) p.title = [{}];
+      if (!p.desc) p.desc = [{}];
 
-      // Default airdate for TV or sports
+      const originalTitle = p.title[0]._ || '';
+      const cleanedTitle = cleanTitle(originalTitle);
+      const description = p.desc[0]._ || '';
       const start = p.$.start;
-      let airdate = start ? formatDate(start) : '';
+      const airdate = start ? formatDate(start) : '';
 
       if (isSport(cleanedTitle)) {
         // Sports metadata
@@ -68,7 +71,7 @@ async function run() {
       } else {
         // TV show metadata
         const seasonEpisode = extractSeasonEpisode(description);
-        const episodeName = description.split('.')[0] || ''; // simple first sentence as episode name
+        const episodeName = description.split('.')[0] || '';
         p.title[0]._ = cleanedTitle;
         p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
@@ -78,6 +81,7 @@ async function run() {
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
+    // Ensure public folder exists
     fs.mkdirSync('./public', { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
