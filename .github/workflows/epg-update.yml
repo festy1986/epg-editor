@@ -33,16 +33,18 @@ jobs:
       - name: Ensure public folder exists
         run: mkdir -p public
 
-      # 6️⃣ Commit and push updated EPG
+      # 6️⃣ Commit and push updated EPG (fixed shell syntax)
       - name: Commit and Push Updated EPG
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
           if [ -f public/epg6_modified.xml.gz ]; then
             git add public/epg6_modified.xml.gz
             git commit -m "Update EPG" || echo "No changes to commit"
             git push
           else
             echo "EPG file not found, nothing to commit"
+          fi
