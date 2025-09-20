@@ -3,43 +3,81 @@ const axios = require('axios');
 const zlib = require('zlib');
 const xml2js = require('xml2js');
 
+// Source EPG
 const EPG_URL = 'https://github.com/ferteque/Curated-M3U-Repository/raw/refs/heads/main/epg6.xml.gz';
 const OUTPUT_FILE = './public/epg6_modified.xml.gz';
 
+// Helper functions
+const cleanTitle = title => title.replace(/\b(LIVE|NEW|REPEAT)\b/gi, '').trim();
+const formatDate = dateStr => {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return '';
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${mm}/${dd}/${yyyy}`;
+};
+const formatYear = dateStr => {
+  const d = new Date(dateStr);
+  return isNaN(d) ? '' : String(d.getFullYear());
+};
+
+// Detect if program is a sport
+const isSport = title => /\b(NFL|NBA|MLB|NHL)\b/i.test(title);
+
+// Detect if program is a movie (no season/episode info)
+const isMovie = title => !/S\d+E\d+/i.test(title);
+
+// Extract season/episode info
+const extractSeasonEpisode = desc => {
+  const match = desc.match(/S(\d+)E(\d+)/i);
+  if (match) return `S${parseInt(match[1])}E${parseInt(match[2])}`;
+  return '';
+};
+
 async function run() {
   try {
-    // 1️⃣ Download original EPG
     console.log('Downloading original EPG...');
     const response = await axios.get(EPG_URL, { responseType: 'arraybuffer' });
     const decompressed = zlib.gunzipSync(response.data).toString();
 
-    // 2️⃣ Parse XML
     const parser = new xml2js.Parser();
     const builder = new xml2js.Builder();
     const xml = await parser.parseStringPromise(decompressed);
 
-    // 3️⃣ Example edits (customize as you like)
-
-    // Change channel display names
-    xml.tv.channel.forEach(ch => {
-      if (ch.$.id === 'channel1') {
-        ch['display-name'][0] = 'My Custom Channel';
-      }
-    });
-
-    // Change program titles and descriptions
+    // Loop over all programs
     xml.tv.programme.forEach(p => {
-      if (p.$.channel === 'channel1') {
-        p.title[0]._ = 'Updated Morning Show';
-        p.desc[0]._ = 'Custom description goes here';
+      let originalTitle = p.title[0]?._ || '';
+      let cleanedTitle = cleanTitle(originalTitle);
+      let description = p.desc && p.desc[0]?._ ? p.desc[0]._ : '';
+
+      // Default airdate for TV or sports
+      const start = p.$.start;
+      let airdate = start ? formatDate(start) : '';
+
+      if (isSport(cleanedTitle)) {
+        // Sports metadata
+        const teams = cleanedTitle.replace(/\b(NFL|NBA|MLB|NHL|Football|Basketball|Hockey|Baseball|Game)\b/gi, '').trim();
+        p.title[0]._ = teams;
+        p.desc[0]._ = `${teams}. ${description}. (${airdate})`;
+      } else if (isMovie(cleanedTitle)) {
+        // Movie metadata
+        p.title[0]._ = cleanedTitle;
+        const year = start ? formatYear(start) : '';
+        p.desc[0]._ = `${cleanedTitle}. ${description}. (${year})`;
+      } else {
+        // TV show metadata
+        const seasonEpisode = extractSeasonEpisode(description);
+        const episodeName = description.split('.')[0] || ''; // simple first sentence as episode name
+        p.title[0]._ = cleanedTitle;
+        p.desc[0]._ = `${episodeName} - ${seasonEpisode}. ${description}. (${airdate})`;
       }
     });
 
-    // 4️⃣ Build XML and compress
+    // Build XML and compress
     const newXml = builder.buildObject(xml);
     const compressed = zlib.gzipSync(newXml);
 
-    // Ensure public folder exists
     fs.mkdirSync('./public', { recursive: true });
     fs.writeFileSync(OUTPUT_FILE, compressed);
 
