@@ -12,49 +12,46 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # Step 1: Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Setup Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Step 3: Install dependencies
       - name: Install dependencies
         run: npm install
 
-      # Step 4: Run EPG editor script
       - name: Run EPG editor
         run: npm run edit
 
-      # Step 5: Verify modified EPG exists
       - name: Verify modified EPG
         run: ls -l ./public
 
-      # Step 6: Optional Debug - Print first 20 programmes in JSON
       - name: Debug: Print first 20 programmes
         run: |
-          node -e "
+          node <<'EOF'
           const fs = require('fs');
           const zlib = require('zlib');
           const xml2js = require('xml2js');
+
           const data = zlib.gunzipSync(fs.readFileSync('./public/epg6_modified.xml.gz'));
           xml2js.parseString(data, (err, result) => {
             if (err) throw err;
-            console.log(JSON.stringify(result.tv.programme.slice(0, 20).map(p => ({
+
+            const programmes = result.tv.programme.slice(0, 20).map(p => ({
               channel: p.$?.channel,
               title: p.title?.[0],
               desc: p.desc?.[0],
               start: p.$?.start,
               stop: p.$?.stop
-            })), null, 2));
-          });
-          "
+            }));
 
-      # Step 7: Commit and push updated EPG
+            console.log(JSON.stringify(programmes, null, 2));
+          });
+          EOF
+
       - name: Commit and push updated EPG
         uses: stefanzweifel/git-auto-commit-action@v4
         with:
